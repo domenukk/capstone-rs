@@ -6,3 +6,6 @@ Cargo.lock
 CHANGELOG.html
 README.html
 publish-crates.html
+
+# Frida capstone, cloned in build.rs
+capstone-sys/capstone

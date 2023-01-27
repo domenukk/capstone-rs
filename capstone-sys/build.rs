@@ -49,13 +49,12 @@ use {
     std::{fs::File, io::Write},
 };
 
-use std::env;
 use std::fs::copy;
 use std::path::PathBuf;
+use std::process::Command;
+use std::{env, path::Path};
 
 include!("common.rs");
-
-const CAPSTONE_DIR: &str = "capstone";
 
 /// Indicates how capstone library should be linked
 #[allow(dead_code)]
@@ -65,28 +64,28 @@ enum LinkType {
 }
 
 /// Build capstone using the cc crate
-fn build_capstone_cc() {
+fn build_capstone_cc<P: AsRef<Path>>(capstone_dir: P) {
     use std::fs::DirEntry;
+    let capstone_dir = capstone_dir.as_ref();
 
-    fn read_dir_and_filter<F: Fn(&DirEntry) -> bool>(dir: &str, filter: F) -> Vec<String> {
+    fn read_dir_and_filter<F: Fn(&DirEntry) -> bool, P: AsRef<Path>>(
+        dir: P,
+        filter: F,
+    ) -> Vec<PathBuf> {
         use std::fs::read_dir;
+
+        let dir = dir.as_ref();
 
         read_dir(dir)
             .expect("Failed to read capstone source directory")
             .into_iter()
             .map(|e| e.expect("Failed to read capstone source directory"))
             .filter(|e| filter(e))
-            .map(|e| {
-                format!(
-                    "{}/{}",
-                    dir,
-                    e.file_name().to_str().expect("Invalid filename")
-                )
-            })
+            .map(|e| dir.join(e.file_name().to_str().expect("Invalid filename")))
             .collect()
     }
 
-    fn find_c_source_files(dir: &str) -> Vec<String> {
+    fn find_c_source_files<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
         read_dir_and_filter(dir, |e| {
             let file_type = e
                 .file_type()
@@ -96,16 +95,16 @@ fn build_capstone_cc() {
         })
     }
 
-    fn find_arch_dirs() -> Vec<String> {
-        read_dir_and_filter(&format!("{}/{}", CAPSTONE_DIR, "arch"), |e| {
+    let find_arch_dirs = || {
+        read_dir_and_filter(capstone_dir.join("arch"), |e| {
             let file_type = e
                 .file_type()
                 .expect("Failed to read capstone source directory");
             file_type.is_dir()
         })
-    }
+    };
 
-    let mut files = find_c_source_files(CAPSTONE_DIR);
+    let mut files = find_c_source_files(capstone_dir);
     for arch_dir in find_arch_dirs().into_iter() {
         files.append(&mut find_c_source_files(&arch_dir));
     }
@@ -117,7 +116,7 @@ fn build_capstone_cc() {
     let mut builder = cc::Build::new();
     builder
         .files(files)
-        .include(format!("{}/{}", CAPSTONE_DIR, "include"))
+        .include(capstone_dir.join("include"))
         .define("CAPSTONE_USE_SYS_DYN_MEM", None)
         .define("CAPSTONE_HAS_ARM", None)
         .define("CAPSTONE_HAS_ARM64", None)
@@ -299,15 +298,39 @@ fn write_bindgen_bindings(
 }
 
 fn main() {
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let capstone_dir = out_dir.join("capstone_git");
+
     #[allow(unused_assignments)]
     let mut link_type: Option<LinkType> = None;
 
+    if let Err(err) = Command::new("git")
+        .args([
+            "clone",
+            "https://github.com/frida/capstone.git",
+            "capstone_git",
+        ])
+        .current_dir(out_dir)
+        .status()
+    {
+        println!(
+            "cargo:waning=Could not clone folder - already exists at {capstone_dir:?}? - {err:?}"
+        );
+    }
+    Command::new("git")
+        .args(["checkout", "22d3170"])
+        .current_dir(&capstone_dir)
+        .status()
+        .unwrap();
+
+    build_capstone_cc(&capstone_dir);
+
     // C header search paths
-    let mut header_search_paths: Vec<PathBuf> = Vec::new();
-
-    build_capstone_cc();
-
-    header_search_paths.push([CAPSTONE_DIR, "include", "capstone"].iter().collect());
+    let header_search_paths = vec![
+        capstone_dir.clone(),
+        capstone_dir.join("include"),
+        capstone_dir.join("include").join("capstone"),
+    ];
     link_type = Some(LinkType::Static);
 
     match link_type.expect("Must specify link type") {
