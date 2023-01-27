@@ -72,8 +72,10 @@ impl Arm64OperandType {
             ARM64_OP_PREFETCH => Prefetch(unsafe { value.prefetch }),
             ARM64_OP_BARRIER => Barrier(unsafe { value.barrier }),
             // TODO: This likely needs to be filled with the proper value
+            #[cfg(feature = "frida")]
             ARM64_OP_SVCR => Svcr,
             //TODO: More missing values (unsafe {value.sme_index}),
+            #[cfg(feature = "frida")]
             ARM64_OP_SME_INDEX => SmeIndex,
         }
     }
@@ -135,9 +137,11 @@ pub enum Arm64OperandType {
     Barrier(Arm64BarrierOp),
 
     /// SVCR operand for MSR SVCR instructions.
+    #[cfg(feature = "frida")]
     Svcr,
 
     /// SME instruction operand with with index.
+    #[cfg(feature = "frida")]
     SmeIndex,
 
     /// Invalid

@@ -51,6 +51,7 @@ use {
 
 use std::fs::copy;
 use std::path::PathBuf;
+#[cfg(feature = "frida")]
 use std::process::Command;
 use std::{env, path::Path};
 
@@ -298,27 +299,31 @@ fn write_bindgen_bindings(
 }
 
 fn main() {
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let capstone_dir = out_dir.join("capstone_git");
+    let _out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    #[cfg(feature = "frida")]
+    let capstone_dir = _out_dir.join("capstone_git");
+    #[cfg(feature = "frida")]
+    let (git, rev) = ("https://github.com/frida/capstone.git", "22d3170");
+
+    #[cfg(not(feature = "frida"))]
+    let capstone_dir = PathBuf::from("capstone");
 
     #[allow(unused_assignments)]
     let mut link_type: Option<LinkType> = None;
 
+    #[cfg(feature = "frida")]
     if let Err(err) = Command::new("git")
-        .args([
-            "clone",
-            "https://github.com/frida/capstone.git",
-            "capstone_git",
-        ])
-        .current_dir(out_dir)
+        .args(["clone", git, "capstone_git"])
+        .current_dir(_out_dir)
         .status()
     {
         println!(
             "cargo:waning=Could not clone folder - already exists at {capstone_dir:?}? - {err:?}"
         );
     }
+    #[cfg(feature = "frida")]
     Command::new("git")
-        .args(["checkout", "22d3170"])
+        .args(["checkout", rev])
         .current_dir(&capstone_dir)
         .status()
         .unwrap();
@@ -326,7 +331,7 @@ fn main() {
     build_capstone_cc(&capstone_dir);
 
     // C header search paths
-    let header_search_paths = vec![
+    let _header_search_paths = vec![
         capstone_dir.clone(),
         capstone_dir.join("include"),
         capstone_dir.join("include").join("capstone"),
@@ -369,7 +374,7 @@ fn main() {
     // Only run bindgen if we are *not* using the bundled capstone bindings
     #[cfg(feature = "use_bindgen")]
     write_bindgen_bindings(
-        &header_search_paths,
+        &_header_search_paths,
         update_pregenerated_bindings,
         pregenerated_bindgen_header,
         pregenerated_bindgen_impl,
